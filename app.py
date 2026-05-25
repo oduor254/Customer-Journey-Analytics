@@ -5,6 +5,7 @@ from oauth2client.service_account import ServiceAccountCredentials
 import pandas as pd
 from datetime import datetime, timedelta
 import json
+import base64
 import time
 import os
 import traceback
@@ -44,17 +45,22 @@ def get_cached_processed_data():
 def authenticate_sheets():
     """Authenticate with Google Sheets API.
 
-    Supports two credential modes:
-    - GOOGLE_CREDENTIALS_JSON  env var: raw JSON string (cloud platform / serverless)
-    - GOOGLE_CREDENTIALS_PATH  env var: path to a local JSON file (local dev / Render secret file)
+    Credential modes (checked in order):
+    1. GOOGLE_CREDENTIALS_B64  - base64-encoded JSON string (safest for cloud env vars)
+    2. GOOGLE_CREDENTIALS_JSON - raw JSON string
+    3. GOOGLE_CREDENTIALS_PATH - path to a local JSON file (local dev / Render)
     """
-    creds_json_str = os.getenv('GOOGLE_CREDENTIALS_JSON')
-    if creds_json_str:
-        creds_dict = json.loads(creds_json_str)
-        creds = ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPES)
-    else:
-        creds = ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_PATH, SCOPES)
-    return gspread.authorize(creds)
+    b64_str = os.getenv('GOOGLE_CREDENTIALS_B64')
+    if b64_str:
+        creds_dict = json.loads(base64.b64decode(b64_str).decode('utf-8'))
+        return gspread.authorize(ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPES))
+
+    json_str = os.getenv('GOOGLE_CREDENTIALS_JSON')
+    if json_str:
+        creds_dict = json.loads(json_str)
+        return gspread.authorize(ServiceAccountCredentials.from_json_keyfile_dict(creds_dict, SCOPES))
+
+    return gspread.authorize(ServiceAccountCredentials.from_json_keyfile_name(CREDENTIALS_PATH, SCOPES))
 
 def worksheet_to_df(worksheet):
     """Convert a worksheet to DataFrame, dropping blank/duplicate header columns."""
