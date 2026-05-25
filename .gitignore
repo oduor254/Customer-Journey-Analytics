@@ -1,0 +1,78 @@
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Google Credentials — block service-account / secret JSON files specifically
+*credentials*.json
+*-credentials.json
+*service_account*.json
+*serviceaccount*.json
+*secret*.json
+# Allow known project JSON files
+!package.json
+!vercel.json
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+pip-wheel-metadata/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual Environment
+venv/
+ENV/
+env/
+.venv
+
+# IDE & editor metadata
+.vscode/
+.idea/
+.claude/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Cache
+.cache/
+.pytest_cache/
+.coverage
+
+# Logs
+*.log
+logs/
+
+# OS
+Thumbs.db
+.DS_Store
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Sensitive data
+secrets/
+credentials/
+*.key
+*.pem
