@@ -1038,7 +1038,7 @@
                     <input id="journeySearchSource" type="text" placeholder="Search source..." style="flex:1;min-width:160px;padding:9px 12px;border:2px solid #e2e8f0;border-radius:6px;font-size:0.9em;" oninput="filterJourney()">
                     <input id="journeyMaxDays"      type="number" placeholder="Max days..."   style="width:120px;padding:9px 12px;border:2px solid #e2e8f0;border-radius:6px;font-size:0.9em;" oninput="filterJourney()">
                     <button class="btn btn-secondary" onclick="clearJourneyFilters()">Clear</button>
-                    <button class="btn btn-primary"   onclick="exportTableCSV('journeyTableBody','lead_purchase_journey.csv')">&#8595; CSV</button>
+                    <button class="btn btn-primary"   onclick="exportJourneyCSV()">&#8595; CSV</button>
                     <span id="journeyCount" style="color:#718096;font-size:0.85em;white-space:nowrap;"></span>
                 </div>
                 <div style="max-height:480px;overflow-y:auto;">
@@ -1582,24 +1582,24 @@
         }
 
         // ── Lead → Purchase Journey ───────────────────────────────────
+        const JOURNEY_DISPLAY_LIMIT = 100;
         let _journeyAll = [];
         function renderLeadPurchaseJourney(data) {
             _journeyAll = data.records || [];
-            document.getElementById('journeyCount').textContent =
-                `${Math.min(_journeyAll.length, data.total).toLocaleString()} of ${data.total.toLocaleString()} records`;
             filterJourney();
         }
         function filterJourney() {
             const phone  = (document.getElementById('journeySearchPhone').value  || '').toLowerCase();
             const source = (document.getElementById('journeySearchSource').value || '').toLowerCase();
             const maxD   = parseInt(document.getElementById('journeyMaxDays').value) || Infinity;
-            const rows   = _journeyAll.filter(r =>
+            const filtered = _journeyAll.filter(r =>
                 (!phone  || r.phone.includes(phone)) &&
                 (!source || r.source.toLowerCase().includes(source)) &&
                 r.days <= maxD
             );
+            const displayed = filtered.slice(0, JOURNEY_DISPLAY_LIMIT);
             const dayCol = d => d <= 30 ? '#22863a' : d <= 90 ? '#d5640a' : '#cb2431';
-            document.getElementById('journeyTableBody').innerHTML = rows.map(r => `
+            document.getElementById('journeyTableBody').innerHTML = displayed.map(r => `
                 <tr>
                     <td>${r.name}</td>
                     <td style="font-family:monospace">${r.phone}</td>
@@ -1609,6 +1609,27 @@
                     <td><strong>${r.shop}</strong></td>
                     <td style="color:#667eea">${r.source}</td>
                 </tr>`).join('') || '<tr><td colspan="7" class="no-data">No records match</td></tr>';
+            const note = filtered.length > JOURNEY_DISPLAY_LIMIT
+                ? `Showing ${JOURNEY_DISPLAY_LIMIT} of ${filtered.length.toLocaleString()} — export for full data`
+                : `${filtered.length.toLocaleString()} record${filtered.length !== 1 ? 's' : ''}`;
+            document.getElementById('journeyCount').textContent = note;
+            // stash filtered set so export always gets everything
+            _journeyFiltered = filtered;
+        }
+        let _journeyFiltered = [];
+        function exportJourneyCSV() {
+            const rows = _journeyFiltered.length ? _journeyFiltered : _journeyAll;
+            const headers = ['Name','Phone','Lead Date','Purchase Date','Days','Shop','Source'];
+            const lines = [headers.join(',')].concat(rows.map(r =>
+                [r.name, r.phone, r.leadDate||'', r.purchaseDate||'', r.days, r.shop, r.source]
+                    .map(v => `"${String(v).replace(/"/g,'""')}"`)
+                    .join(',')
+            ));
+            const blob = new Blob([lines.join('\n')], {type:'text/csv'});
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = 'lead_purchase_journey.csv';
+            a.click();
         }
         function clearJourneyFilters() {
             ['journeySearchPhone','journeySearchSource','journeyMaxDays'].forEach(id=>document.getElementById(id).value='');
