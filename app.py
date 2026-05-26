@@ -444,8 +444,8 @@ def calculate_source_conversion_times(filtered_data, shops_df):
         'byChannel': sorted(by_channel, key=lambda x: x['avgDays']),
     }
 
-def calculate_lead_purchase_journey(all_leads, shops_df, limit=500):
-    """Individual lead→purchase records: first contact → first sale, sorted longest first."""
+def calculate_lead_purchase_journey(all_leads, shops_df):
+    """Individual lead→purchase records: first contact → first sale, sorted latest purchase first."""
     shop_phones = set(p for p in shops_df['Phone'].dropna().unique() if len(str(p)) >= 9)
 
     lead_agg = all_leads.groupby('CONTACT').agg(
@@ -465,11 +465,11 @@ def calculate_lead_purchase_journey(all_leads, shops_df, limit=500):
 
     merged = lead_agg.merge(shop_agg, left_on='CONTACT', right_on='Phone', how='inner')
     merged['days'] = (merged['purchase_date'] - merged['lead_date']).dt.days
-    merged = merged[merged['days'] >= 0].sort_values('days', ascending=False)
+    merged = merged[merged['days'] >= 0].sort_values('purchase_date', ascending=False)
     total  = len(merged)
 
     records = []
-    for _, row in merged.head(limit).iterrows():
+    for _, row in merged.iterrows():
         records.append({
             'name':         str(row['name'])     if pd.notna(row.get('name'))          else '—',
             'phone':        str(row['CONTACT']),
