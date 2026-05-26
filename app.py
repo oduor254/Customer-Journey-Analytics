@@ -143,6 +143,19 @@ def source_to_channel(source):
         return 'Organic'
     return 'Other'
 
+def platform_to_channel(platform, source):
+    """Map (Platform, Source) to a high-level channel, falling back to source_to_channel."""
+    p = str(platform).strip().lower() if pd.notna(platform) and str(platform).strip() not in ('', 'nan', 'none') else ''
+    if any(k in p for k in ['instagram', 'facebook', 'fb', 'meta']):
+        return 'Meta Ads'
+    if any(k in p for k in ['tiktok', 'tik tok', 'tik-tok']):
+        return 'TikTok'
+    if any(k in p for k in ['google', 'youtube', 'email', 'referral', 'organic', 'whatsapp']):
+        return 'Organic'
+    if p:
+        return p.title()
+    return source_to_channel(source)
+
 def normalize_source(s):
     """Map raw source strings to canonical group names."""
     if pd.isna(s) or not str(s).strip():
@@ -179,8 +192,11 @@ def merge_data(shops_df, leads_df, whatsapp_df):
     whatsapp_df['Lead_Source'] = 'WhatsApp'
     
     # Merge leads and whatsapp
+    leads_cols = ['Date', 'CONTACT', 'NAME', 'BRANCH', 'Source', 'Lead_Source']
+    if 'Platform' in leads_df.columns:
+        leads_cols.insert(leads_cols.index('Lead_Source'), 'Platform')
     all_leads = pd.concat([
-        leads_df[['Date', 'CONTACT', 'NAME', 'BRANCH', 'Source', 'Lead_Source']].rename(columns={'Date': 'Date', 'Source': 'Source'}),
+        leads_df[leads_cols],
         whatsapp_df[['DATE', 'CONTACT', 'NAME', 'SOURCE', 'ACTIVITY', 'BRANCH', 'Lead_Source']].rename(
             columns={'DATE': 'Date', 'SOURCE': 'Source', 'ACTIVITY': 'Activity'}
         )
@@ -692,6 +708,8 @@ def calculate_lead_status(filtered_data):
         if df.empty:
             return []
         agg_kw = {'name': ('NAME', 'first'), 'last_date': ('Date', 'max'), 'source': ('Source', 'first')}
+        if 'Platform' in df.columns:
+            agg_kw['platform'] = ('Platform', 'first')
         agg = df.groupby('CONTACT').agg(**agg_kw)
         if 'BRANCH' in df.columns:
             agg = agg.join(df.groupby('CONTACT')['BRANCH'].first())
@@ -701,11 +719,12 @@ def calculate_lead_status(filtered_data):
         rows = []
         for contact, row in agg.iterrows():
             rows.append({
-                'name':    str(row['name'])   if pd.notna(row.get('name'))   else 'Unknown',
-                'phone':   str(contact),
-                'source':  str(row['source']) if pd.notna(row.get('source')) else '—',
-                'branch':  str(row['BRANCH']) if 'BRANCH' in row.index and pd.notna(row.get('BRANCH')) else '—',
-                'daysAgo': int(row['days_ago']),
+                'name':     str(row['name'])       if pd.notna(row.get('name'))       else 'Unknown',
+                'phone':    str(contact),
+                'source':   str(row['source'])     if pd.notna(row.get('source'))     else '—',
+                'platform': str(row['platform'])   if 'platform' in row.index and pd.notna(row.get('platform')) else '—',
+                'branch':   str(row['BRANCH'])     if 'BRANCH' in row.index and pd.notna(row.get('BRANCH'))     else '—',
+                'daysAgo':  int(row['days_ago']),
             })
         return rows
 
@@ -782,21 +801,25 @@ def calculate_activity_effectiveness(filtered_data, shops_df):
     return sorted(activities, key=lambda x: x['engaged'], reverse=True)
 
 def calculate_platform_performance(filtered_data):
-    """Calculate platform performance"""
+    """Calculate performance broken down by Platform (Instagram, TikTok, etc.)."""
     platforms = {}
-    
-    for source in get_unique_sources(filtered_data):
-        source_data = filtered_data[filtered_data['Source'] == source]
-        
-        leads = source_data['CONTACT'].nunique()
-        conversions = source_data[source_data['Price'].notna()]['CONTACT'].nunique()
-        
-        platforms[source] = {
+
+    if 'Platform' in filtered_data.columns:
+        plat_df = filtered_data[filtered_data['Platform'].notna() & (filtered_data['Platform'].astype(str).str.strip() != '')]
+        groups = plat_df.groupby('Platform')
+    else:
+        # Fall back to Source grouping when Platform column is absent
+        groups = filtered_data.groupby('Source')
+
+    for label, grp in groups:
+        leads = grp['CONTACT'].nunique()
+        conversions = grp[grp['Price'].notna()]['CONTACT'].nunique()
+        platforms[str(label)] = {
             'leads': int(leads),
             'conversions': int(conversions),
-            'conversionRate': round(conversions / leads * 100, 2) if leads > 0 else 0
+            'conversionRate': round(conversions / leads * 100, 2) if leads > 0 else 0,
         }
-    
+
     return platforms
 
 def calculate_time_to_purchase(merged_df, filtered_data):
@@ -1000,7 +1023,10 @@ def calculate_marketing_source_roi(filtered_data, shops_df):
     tiktok_spend = float(shops_with_date.groupby('Date')['TIKTOK ADS'].max().sum()) if 'TIKTOK ADS' in shops_df.columns else 0.0
 
     copy = filtered_data.copy()
-    copy['channel'] = copy['Source'].apply(source_to_channel)
+    if 'Platform' in copy.columns:
+        copy['channel'] = copy.apply(lambda r: platform_to_channel(r.get('Platform'), r['Source']), axis=1)
+    else:
+        copy['channel'] = copy['Source'].apply(source_to_channel)
 
     result = []
     for ch, grp in copy.groupby('channel'):
@@ -1083,6 +1109,7 @@ def customer_lookup():
             interactions.append({
                 'date':        row['Date'].strftime('%Y-%m-%d') if pd.notna(row.get('Date')) else None,
                 'source':      str(row.get('Source', '')),
+                'platform':    str(row['Platform']) if 'Platform' in row.index and pd.notna(row.get('Platform')) else '',
                 'activity':    str(row['Activity']) if 'Activity' in row and pd.notna(row.get('Activity')) else '',
                 'lead_source': str(row.get('Lead_Source', '')),
                 'branch':      str(row['BRANCH']) if 'BRANCH' in row and pd.notna(row.get('BRANCH')) else '',
