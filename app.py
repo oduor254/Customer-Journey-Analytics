@@ -233,20 +233,20 @@ def get_dashboard_data():
     """Main endpoint to get all dashboard data"""
     try:
         # Get filters from request
-        time_filter = request.args.get('timeFilter', 'all')
-        source_filter = request.args.get('source', 'all')
+        time_filter     = request.args.get('timeFilter', 'all')
+        source_filter   = request.args.get('source', 'all')
         location_filter = request.args.get('location', 'all')
-        search_query = request.args.get('search', '')
-        
+        month_filter    = request.args.get('month', 'all')   # 'all' or '1'–'12'
+        search_query    = request.args.get('search', '')
+
         # Fetch and process data (served from cache when fresh)
         merged_df, all_leads, shops_processed = get_cached_processed_data()
 
         # Apply filters to leads/merged data
-        filtered_data = apply_filters(merged_df, time_filter, source_filter, location_filter, search_query)
+        filtered_data = apply_filters(merged_df, time_filter, source_filter, location_filter, search_query, month_filter)
 
-        # Apply the same time filter to shop purchases so spend, revenue, and
-        # conversions all reflect the selected period (not all-time)
-        shops_filtered = filter_shops_by_time(shops_processed, time_filter)
+        # Apply the same time + month filters to shop purchases
+        shops_filtered = filter_shops_by_time(shops_processed, time_filter, month_filter)
 
         # Calculate all metrics
         dashboard_data = {
@@ -273,7 +273,8 @@ def get_dashboard_data():
                 'currentFilters': {
                     'timeFilter': time_filter,
                     'source': source_filter,
-                    'location': location_filter
+                    'location': location_filter,
+                    'month': month_filter,
                 }
             }
         }
@@ -285,10 +286,10 @@ def get_dashboard_data():
         print(tb, flush=True)
         return jsonify({'error': str(e), 'traceback': tb}), 500
 
-def apply_filters(merged_df, time_filter, source_filter, location_filter, search_query):
+def apply_filters(merged_df, time_filter, source_filter, location_filter, search_query, month_filter='all'):
     """Apply filters to data"""
     df = merged_df.copy()
-    
+
     # Time filter
     if time_filter != 'all':
         today = datetime.now()
@@ -300,24 +301,27 @@ def apply_filters(merged_df, time_filter, source_filter, location_filter, search
             start_date = today - timedelta(days=90)
         elif time_filter == 'yearly':
             start_date = today - timedelta(days=365)
-        
         df = df[df['Date'] >= start_date]
-    
+
+    # Month filter (stacks with time filter)
+    if month_filter != 'all':
+        df = df[df['Date'].dt.month == int(month_filter)]
+
     # Source filter
     if source_filter != 'all':
         df = df[df['Source'] == source_filter]
-    
+
     # Location filter
     if location_filter != 'all' and 'Location' in df.columns:
         df = df[df['Location'] == location_filter]
-    
+
     # Search filter
     if search_query:
         df = df[
             (df['NAME'].astype(str).str.contains(search_query, case=False, na=False)) |
             (df['CONTACT'].astype(str).str.contains(search_query, case=False, na=False))
         ]
-    
+
     return df
 
 BRANCH_REGIONS = {
@@ -604,15 +608,17 @@ def calculate_top_customers_by_branch(filtered_data, shops_df, top_n=10):
 
     return result
 
-def filter_shops_by_time(shops_df, time_filter):
-    """Return a copy of shops_df restricted to the selected time window."""
-    if time_filter == 'all':
-        return shops_df
-    days = {'weekly': 7, 'monthly': 30, 'quarterly': 90, 'yearly': 365}.get(time_filter)
-    if days is None:
-        return shops_df
-    cutoff = datetime.now() - timedelta(days=days)
-    return shops_df[shops_df['Date'] >= cutoff]
+def filter_shops_by_time(shops_df, time_filter, month_filter='all'):
+    """Return a copy of shops_df restricted to the selected time window and/or month."""
+    df = shops_df
+    if time_filter != 'all':
+        days = {'weekly': 7, 'monthly': 30, 'quarterly': 90, 'yearly': 365}.get(time_filter)
+        if days:
+            cutoff = datetime.now() - timedelta(days=days)
+            df = df[df['Date'] >= cutoff]
+    if month_filter != 'all':
+        df = df[df['Date'].dt.month == int(month_filter)]
+    return df
 
 def calculate_executive_summary(filtered_data, shops_df):
     """Calculate executive summary metrics"""

@@ -836,6 +836,25 @@
                     </select>
                 </div>
 
+                <div class="filter-group">
+                    <label for="monthFilter">🗓️ Month</label>
+                    <select id="monthFilter">
+                        <option value="all">All Months</option>
+                        <option value="1">January</option>
+                        <option value="2">February</option>
+                        <option value="3">March</option>
+                        <option value="4">April</option>
+                        <option value="5">May</option>
+                        <option value="6">June</option>
+                        <option value="7">July</option>
+                        <option value="8">August</option>
+                        <option value="9">September</option>
+                        <option value="10">October</option>
+                        <option value="11">November</option>
+                        <option value="12">December</option>
+                    </select>
+                </div>
+
                 <div class="button-group">
                     <button class="btn btn-primary" onclick="applyFilters()">Apply Filters</button>
                     <button class="btn btn-secondary" onclick="resetFilters()">Reset</button>
@@ -1277,10 +1296,11 @@
             const timeFilter = document.getElementById('timeFilter').value;
             const source     = document.getElementById('sourceFilter').value;
             const location   = document.getElementById('locationFilter').value;
+            const month      = document.getElementById('monthFilter').value;
 
             showLoadingOverlay();
             try {
-                const params = new URLSearchParams({ timeFilter, source, location });
+                const params = new URLSearchParams({ timeFilter, source, location, month });
                 const response = await fetch(`${API_BASE}/dashboard-data?${params}`);
                 if (!response.ok) throw new Error('Failed to fetch filtered data');
 
@@ -1304,6 +1324,7 @@
             document.getElementById('timeFilter').value = 'all';
             document.getElementById('sourceFilter').value = 'all';
             document.getElementById('locationFilter').value = 'all';
+            document.getElementById('monthFilter').value = 'all';
             document.getElementById('searchInput').value = '';
             applyFilters();
         }
