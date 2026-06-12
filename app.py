@@ -244,17 +244,18 @@ def get_dashboard_data():
         time_filter     = request.args.get('timeFilter', 'all')
         source_filter   = request.args.get('source', 'all')
         location_filter = request.args.get('location', 'all')
-        month_filter    = request.args.get('month', 'all')   # 'all' or '1'–'12'
+        month_filter    = request.args.get('month', 'all')   # 'all' | '1'–'12' | 'Q1'–'Q4'
+        year_filter     = request.args.get('year', 'all')    # 'all' | '2024' | '2025' …
         search_query    = request.args.get('search', '')
 
         # Fetch and process data (served from cache when fresh)
         merged_df, all_leads, shops_processed = get_cached_processed_data()
 
         # Apply filters to leads/merged data
-        filtered_data = apply_filters(merged_df, time_filter, source_filter, location_filter, search_query, month_filter)
+        filtered_data = apply_filters(merged_df, time_filter, source_filter, location_filter, search_query, month_filter, year_filter)
 
-        # Apply the same time + month filters to shop purchases
-        shops_filtered = filter_shops_by_time(shops_processed, time_filter, month_filter)
+        # Apply the same filters to shop purchases
+        shops_filtered = filter_shops_by_time(shops_processed, time_filter, month_filter, year_filter)
 
         # Calculate all metrics
         dashboard_data = {
@@ -275,14 +276,16 @@ def get_dashboard_data():
             'leadPurchaseJourney':   calculate_lead_purchase_journey(all_leads, shops_filtered),
             'unconvertedMetrics':    calculate_unconverted_metrics(filtered_data, shops_filtered),
             'filters': {
-                'timeOptions': ['weekly', 'monthly', 'quarterly', 'yearly'],
+                'timeOptions': ['weekly', 'monthly', 'half_year', 'this_year', 'quarterly', 'yearly'],
                 'sourceOptions': get_unique_sources(all_leads),
                 'locationOptions': get_unique_locations(shops_processed),
+                'yearOptions': get_unique_years(merged_df),
                 'currentFilters': {
                     'timeFilter': time_filter,
                     'source': source_filter,
                     'location': location_filter,
                     'month': month_filter,
+                    'year': year_filter,
                 }
             }
         }
@@ -294,7 +297,9 @@ def get_dashboard_data():
         print(tb, flush=True)
         return jsonify({'error': str(e), 'traceback': tb}), 500
 
-def apply_filters(merged_df, time_filter, source_filter, location_filter, search_query, month_filter='all'):
+_QUARTER_MONTHS = {'Q1': [1,2,3], 'Q2': [4,5,6], 'Q3': [7,8,9], 'Q4': [10,11,12]}
+
+def apply_filters(merged_df, time_filter, source_filter, location_filter, search_query, month_filter='all', year_filter='all'):
     """Apply filters to data"""
     df = merged_df.copy()
 
@@ -305,15 +310,29 @@ def apply_filters(merged_df, time_filter, source_filter, location_filter, search
             start_date = today - timedelta(days=7)
         elif time_filter == 'monthly':
             start_date = today - timedelta(days=30)
+        elif time_filter == 'half_year':
+            start_date = today - timedelta(days=180)
+        elif time_filter == 'this_year':
+            start_date = datetime(today.year, 1, 1)
         elif time_filter == 'quarterly':
             start_date = today - timedelta(days=90)
         elif time_filter == 'yearly':
             start_date = today - timedelta(days=365)
-        df = df[df['Date'] >= start_date]
+        else:
+            start_date = None
+        if start_date:
+            df = df[df['Date'] >= start_date]
 
-    # Month filter (stacks with time filter)
+    # Month / quarter filter (stacks with time and year filters)
     if month_filter != 'all':
-        df = df[df['Date'].dt.month == int(month_filter)]
+        if month_filter in _QUARTER_MONTHS:
+            df = df[df['Date'].dt.month.isin(_QUARTER_MONTHS[month_filter])]
+        else:
+            df = df[df['Date'].dt.month == int(month_filter)]
+
+    # Year filter
+    if year_filter != 'all':
+        df = df[df['Date'].dt.year == int(year_filter)]
 
     # Source filter
     if source_filter != 'all':
@@ -416,6 +435,13 @@ def get_unique_locations(df):
         return []
     locations = df['Location'].dropna().unique().tolist()
     return sorted([l for l in locations if l])
+
+def get_unique_years(df):
+    """Return sorted list of years present in the Date column, most recent first."""
+    if 'Date' not in df.columns:
+        return []
+    years = df['Date'].dropna().dt.year.unique().tolist()
+    return sorted([int(y) for y in years], reverse=True)
 
 def calculate_source_conversion_times(filtered_data, shops_df):
     """Per-source and per-channel average / fastest / slowest days from first lead to first purchase."""
@@ -616,16 +642,24 @@ def calculate_top_customers_by_branch(filtered_data, shops_df, top_n=10):
 
     return result
 
-def filter_shops_by_time(shops_df, time_filter, month_filter='all'):
-    """Return a copy of shops_df restricted to the selected time window and/or month."""
+def filter_shops_by_time(shops_df, time_filter, month_filter='all', year_filter='all'):
+    """Return a copy of shops_df restricted to the selected time window, month/quarter, and year."""
     df = shops_df
     if time_filter != 'all':
-        days = {'weekly': 7, 'monthly': 30, 'quarterly': 90, 'yearly': 365}.get(time_filter)
-        if days:
-            cutoff = datetime.now() - timedelta(days=days)
-            df = df[df['Date'] >= cutoff]
+        today = datetime.now()
+        if time_filter == 'this_year':
+            df = df[df['Date'] >= datetime(today.year, 1, 1)]
+        else:
+            days = {'weekly': 7, 'monthly': 30, 'half_year': 180, 'quarterly': 90, 'yearly': 365}.get(time_filter)
+            if days:
+                df = df[df['Date'] >= today - timedelta(days=days)]
     if month_filter != 'all':
-        df = df[df['Date'].dt.month == int(month_filter)]
+        if month_filter in _QUARTER_MONTHS:
+            df = df[df['Date'].dt.month.isin(_QUARTER_MONTHS[month_filter])]
+        else:
+            df = df[df['Date'].dt.month == int(month_filter)]
+    if year_filter != 'all':
+        df = df[df['Date'].dt.year == int(year_filter)]
     return df
 
 def calculate_executive_summary(filtered_data, shops_df):

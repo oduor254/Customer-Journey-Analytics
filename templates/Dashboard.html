@@ -818,7 +818,9 @@
                         <option value="weekly">Last 7 Days</option>
                         <option value="monthly">Last 30 Days</option>
                         <option value="quarterly">Last 90 Days</option>
+                        <option value="half_year">Last 6 Months</option>
                         <option value="yearly">Last Year</option>
+                        <option value="this_year">This Year</option>
                     </select>
                 </div>
 
@@ -837,21 +839,36 @@
                 </div>
 
                 <div class="filter-group">
-                    <label for="monthFilter">🗓️ Month</label>
+                    <label for="monthFilter">🗓️ Month / Quarter</label>
                     <select id="monthFilter">
                         <option value="all">All Months</option>
-                        <option value="1">January</option>
-                        <option value="2">February</option>
-                        <option value="3">March</option>
-                        <option value="4">April</option>
-                        <option value="5">May</option>
-                        <option value="6">June</option>
-                        <option value="7">July</option>
-                        <option value="8">August</option>
-                        <option value="9">September</option>
-                        <option value="10">October</option>
-                        <option value="11">November</option>
-                        <option value="12">December</option>
+                        <optgroup label="Quarters">
+                            <option value="Q1">Q1 — Jan, Feb, Mar</option>
+                            <option value="Q2">Q2 — Apr, May, Jun</option>
+                            <option value="Q3">Q3 — Jul, Aug, Sep</option>
+                            <option value="Q4">Q4 — Oct, Nov, Dec</option>
+                        </optgroup>
+                        <optgroup label="Months">
+                            <option value="1">January</option>
+                            <option value="2">February</option>
+                            <option value="3">March</option>
+                            <option value="4">April</option>
+                            <option value="5">May</option>
+                            <option value="6">June</option>
+                            <option value="7">July</option>
+                            <option value="8">August</option>
+                            <option value="9">September</option>
+                            <option value="10">October</option>
+                            <option value="11">November</option>
+                            <option value="12">December</option>
+                        </optgroup>
+                    </select>
+                </div>
+
+                <div class="filter-group">
+                    <label for="yearFilter">📆 Year</label>
+                    <select id="yearFilter">
+                        <option value="all">All Years</option>
                     </select>
                 </div>
 
@@ -1290,6 +1307,17 @@
                 option.textContent = location;
                 locationSelect.appendChild(option);
             });
+
+            // Populate year filter (most recent first, already sorted by backend)
+            if (filters.yearOptions && filters.yearOptions.length) {
+                const yearSelect = document.getElementById('yearFilter');
+                filters.yearOptions.forEach(year => {
+                    const option = document.createElement('option');
+                    option.value = year;
+                    option.textContent = year;
+                    yearSelect.appendChild(option);
+                });
+            }
         }
 
         async function applyFilters() {
@@ -1297,10 +1325,11 @@
             const source     = document.getElementById('sourceFilter').value;
             const location   = document.getElementById('locationFilter').value;
             const month      = document.getElementById('monthFilter').value;
+            const year       = document.getElementById('yearFilter').value;
 
             showLoadingOverlay();
             try {
-                const params = new URLSearchParams({ timeFilter, source, location, month });
+                const params = new URLSearchParams({ timeFilter, source, location, month, year });
                 const response = await fetch(`${API_BASE}/dashboard-data?${params}`);
                 if (!response.ok) throw new Error('Failed to fetch filtered data');
 
@@ -1325,6 +1354,7 @@
             document.getElementById('sourceFilter').value = 'all';
             document.getElementById('locationFilter').value = 'all';
             document.getElementById('monthFilter').value = 'all';
+            document.getElementById('yearFilter').value = 'all';
             document.getElementById('searchInput').value = '';
             applyFilters();
         }
@@ -2335,7 +2365,7 @@
 
             // Auto-apply filters on dropdown change (debounced)
             let _filterTimer;
-            ['timeFilter', 'sourceFilter', 'locationFilter', 'monthFilter'].forEach(id => {
+            ['timeFilter', 'sourceFilter', 'locationFilter', 'monthFilter', 'yearFilter'].forEach(id => {
                 document.getElementById(id).addEventListener('change', () => {
                     clearTimeout(_filterTimer);
                     _filterTimer = setTimeout(applyFilters, 400);
