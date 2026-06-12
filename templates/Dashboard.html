@@ -2327,7 +2327,21 @@
         }
 
         // Initialize on page load
-        window.addEventListener('DOMContentLoaded', initializeDashboard);
+        window.addEventListener('DOMContentLoaded', () => {
+            initializeDashboard();
+
+            // Keep the server function warm so filter changes hit a warm cache
+            setInterval(() => fetch(`${API_BASE}/health`).catch(() => {}), 120000);
+
+            // Auto-apply filters on dropdown change (debounced)
+            let _filterTimer;
+            ['timeFilter', 'sourceFilter', 'locationFilter', 'monthFilter'].forEach(id => {
+                document.getElementById(id).addEventListener('change', () => {
+                    clearTimeout(_filterTimer);
+                    _filterTimer = setTimeout(applyFilters, 400);
+                });
+            });
+        });
 
         // ── Customer History Lookup ────────────────────────────────────
         async function lookupCustomer() {

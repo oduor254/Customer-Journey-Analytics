@@ -10,6 +10,7 @@ import time
 import os
 import traceback
 import certifi
+from concurrent.futures import ThreadPoolExecutor
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -24,7 +25,7 @@ CORS(app)
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets']
 CREDENTIALS_PATH = os.getenv('GOOGLE_CREDENTIALS_PATH', r'C:\Users\Oduor\Downloads\JSON Files\retention-484110-9e4520124486.json')
 SPREADSHEET_ID   = os.getenv('SPREADSHEET_ID', '1zravAS7NoxjnV-2476eBhMitZYQmxWgef3JTbwD-Rag')
-CACHE_TTL        = int(os.getenv('CACHE_TIMEOUT', 300))   # seconds; default 5 min
+CACHE_TTL        = int(os.getenv('CACHE_TIMEOUT', 900))   # seconds; default 15 min
 
 _data_cache = {'data': None, 'ts': 0}
 
@@ -82,13 +83,20 @@ def worksheet_to_df(worksheet):
     return pd.DataFrame(data, columns=col_names)
 
 def get_sheets_data():
-    """Fetch data from all three sheets"""
+    """Fetch all three sheets in parallel to reduce total wait time."""
     client = authenticate_sheets()
     spreadsheet = client.open_by_key(SPREADSHEET_ID)
 
-    shops_df = worksheet_to_df(spreadsheet.worksheet('Shops'))
-    leads_df = worksheet_to_df(spreadsheet.worksheet('Leads_2025'))
-    whatsapp_df = worksheet_to_df(spreadsheet.worksheet('Whatsapp'))
+    def fetch(name):
+        return worksheet_to_df(spreadsheet.worksheet(name))
+
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        f_shops    = pool.submit(fetch, 'Shops')
+        f_leads    = pool.submit(fetch, 'Leads_2025')
+        f_whatsapp = pool.submit(fetch, 'Whatsapp')
+        shops_df    = f_shops.result()
+        leads_df    = f_leads.result()
+        whatsapp_df = f_whatsapp.result()
 
     return shops_df, leads_df, whatsapp_df
 
@@ -255,9 +263,9 @@ def get_dashboard_data():
             'marketingMetrics': calculate_marketing_metrics(filtered_data, shops_filtered),
             'activityEffectiveness': calculate_activity_effectiveness(filtered_data, shops_filtered),
             'platformPerformance': calculate_platform_performance(filtered_data),
-            'timeToFirstPurchase': calculate_time_to_purchase(merged_df, filtered_data),
+            'timeToFirstPurchase': calculate_time_to_purchase(filtered_data),
             'branchPerformance': calculate_branch_performance(filtered_data),
-            'conversionFunnel': calculate_conversion_funnel(all_leads, shops_filtered, filtered_data),
+            'conversionFunnel': calculate_conversion_funnel(filtered_data),
             'unitEconomics': calculate_unit_economics(filtered_data, shops_filtered),
             'adPlatformROI':       calculate_ad_platform_roi(shops_filtered, filtered_data),
             'marketingSourceROI':  calculate_marketing_source_roi(filtered_data, shops_filtered),
@@ -828,7 +836,7 @@ def calculate_platform_performance(filtered_data):
 
     return platforms
 
-def calculate_time_to_purchase(merged_df, filtered_data):
+def calculate_time_to_purchase(filtered_data):
     """Calculate time to first purchase distribution — vectorized."""
     purchase_date_col = 'Purchase_Date' if 'Purchase_Date' in filtered_data.columns else 'Date'
 
@@ -889,7 +897,7 @@ def calculate_branch_performance(filtered_data):
     
     return branches
 
-def calculate_conversion_funnel(all_leads, shops_df, filtered_data):
+def calculate_conversion_funnel(filtered_data):
     """Calculate conversion funnel"""
     total_leads = filtered_data['CONTACT'].nunique()
     engaged = filtered_data[filtered_data['Lead_Source'] == 'WhatsApp']['CONTACT'].nunique()
